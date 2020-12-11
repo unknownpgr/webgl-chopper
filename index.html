@@ -11,27 +11,169 @@
 </head>
 
 <body>
+  <script id="vertShader" type="shader">
+    varying vec2 vUv;
+    varying vec3 vecPos;
+    varying vec3 vecNormal;
+    uniform sampler2D textureSampler;
+
+    const float eps = 0.02;
+
+    float srf(vec2 pos){
+      vec4 color = texture2D(textureSampler,pos);
+      return (color.r+color.g+color.b)*color.a/3.0;
+    }
+     
+    void main() {
+      // Get model position
+      vUv = position.xz;
+
+      // Calculate pos from texture
+      vec3 texturedPos = vec3(position.x,srf(vUv),position.z);
+
+      // Calculate world-space pos for light computation
+      vecPos = (modelViewMatrix * vec4(texturedPos, 1.0)).xyz;
+
+      // Calculate normal
+      vec2 dx = vec2(eps,0.0);
+      vec2 dz = vec2(0.0,eps);
+      vec3 norm = vec3((srf(vUv+dx)-srf(vUv-dx))/(2.0*eps),-1,(srf(vUv+dz)-srf(vUv-dz))/(2.0*eps));
+      vecNormal = (modelViewMatrix * vec4(normalize(norm),0.0)).xyz;
+
+      // Calculated projected position
+      gl_Position = projectionMatrix * vec4(vecPos, 1.0);
+    }
+  </script>
+
+  <script id="fragShader" type="shader">
+    precision highp float;
+
+    struct PointLight {
+      vec3  color;
+      vec3  position;
+    };
+
+    varying vec2  vUv;
+    varying vec3  vecPos;
+    varying vec3  vecNormal;     
+    
+    uniform float       lightIntensity;
+    uniform float       ambient;
+    uniform vec4        color;
+    uniform PointLight  pointLights[NUM_POINT_LIGHTS];
+     
+    void main(void) {      
+      vec4 addedLights = vec4(0.0, 0.0, 0.0, 1.0);
+      for(int l = 0; l < NUM_POINT_LIGHTS; l++) {
+        vec3 distV = vecPos - pointLights[l].position;
+        vec3 lightDirection = normalize(distV);
+        float birghtness = clamp(dot(lightDirection, vecNormal), 0.0, 1.0) * lightIntensity  + ambient;
+        addedLights.rgb += pointLights[l].color * birghtness;
+      }
+      gl_FragColor = color * addedLights;
+    }
+  </script>
+
   <script type="module">
     import * as THREE from "/three.js/src/Three.js"
 
+    function getPlaneGeometry(n) {
+      // Geometry is a user-friendly alternative to BufferGeometry.
+      const geometry = new THREE.Geometry();
+
+      // Order is from top-left to bottom-right.
+      for (let i = 0; i <= n; i++) {
+        for (let j = 0; j <= n; j++) {
+          geometry.vertices.push(new THREE.Vector3(i / n, 0, j / n))
+        }
+      }
+
+      for (let i = 0; i < n; i++) {
+        for (let j = 0; j < n; j++) {
+          let currIndex = i * (n + 1) + j;
+          let nextLine = currIndex + (n + 1);
+          geometry.faces.push(
+            new THREE.Face3(currIndex, currIndex + 1, nextLine),
+            new THREE.Face3(nextLine, currIndex + 1, nextLine + 1)
+          )
+        }
+      }
+
+      // Do i need to call this function?
+      // geometry.computeBoundingSphere();
+
+      return geometry
+    }
+
+    function hex2vec(hexStr) {
+      let r = parseInt(hexStr.substr(1, 2), 16) / 255;
+      let g = parseInt(hexStr.substr(3, 2), 16) / 255;
+      let b = parseInt(hexStr.substr(5, 2), 16) / 255;
+      return { x: r, y: g, z: b, w: 1 }
+    }
+
     const scene = new THREE.Scene();
-    const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+    const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.01, 1000);
     const renderer = new THREE.WebGLRenderer();
     renderer.setSize(window.innerWidth, window.innerHeight);
     document.body.appendChild(renderer.domElement);
 
-    const geometry = new THREE.BoxGeometry();
-    const material = new THREE.MeshBasicMaterial({ color: 0x00ff00 });
-    const cube = new THREE.Mesh(geometry, material);
+    let cube = new THREE.Mesh(
+      new THREE.BoxGeometry(0.1, 0.1, 0.1),
+      new THREE.MeshBasicMaterial()
+    )
     scene.add(cube);
+    cube.position.set(0, 4, 1);
 
-    camera.position.z = 5;
+    {
+      let light = new THREE.PointLight(0xffffff, 1.0);
+      cube.add(light);
+    }
 
-    const animate = function () {
+    const texture = new THREE.TextureLoader().load("/texture.jpg");
+    console.log(texture)
+    // texture.magFilter = THREE.LinearFilter;
+    let mat = new THREE.ShaderMaterial({
+      uniforms: THREE.UniformsUtils.merge([
+        THREE.UniformsLib['lights'],
+        {
+          lightIntensity: { type: 'f', value: 1 },
+          textureSampler: { type: 't', value: texture },
+          ambient: { value: 0.1 },
+          color: { value: hex2vec('#783c00') }
+        }
+      ]),
+      vertexShader: document.
+        getElementById('vertShader').text,
+      fragmentShader: document.
+        getElementById('fragShader').text,
+      transparent: true,
+      lights: true
+    });
+    mat.uniforms.textureSampler.value = texture;
+
+    const geometry = getPlaneGeometry(200);
+    // const material = new THREE.MeshBasicMaterial({ color: 0x00ff00 });
+    const plane = new THREE.Mesh(geometry, mat);
+    plane.scale.set(2, 1, 2)
+    scene.add(plane);
+
+    camera.position.y = 2;
+
+    const animate = function (t) {
       requestAnimationFrame(animate);
 
-      cube.rotation.x += 0.01;
-      cube.rotation.y += 0.01;
+      cube.position.x = Math.sin(t / 1000) + 1
+      cube.position.z = Math.cos(t / 1000) + 1
+
+      camera.position.x = Math.sin(t / 10000) + 1
+      camera.position.z = Math.cos(t / 10000) + 1
+      camera.lookAt(1, 0, 1)
+
+
+      // plane.rotation.x += 0.05;
+      // plane.rotation.y += 0.01;
+      // plane.rotation.z += 0.01;
 
       renderer.render(scene, camera);
     };

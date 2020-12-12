@@ -152,6 +152,7 @@
       const material = getTerrainMaterial();
       const terrain = new THREE.Mesh(geometry, material);
       terrain.scale.set(100, 10, 100)
+      terrain.position.set(-50, 0, -50)
       return terrain
     }
 
@@ -195,20 +196,7 @@
       chopper.vH = 0; // Velocity horizontal
       chopper.vV = 0; // Velocity vertical
 
-      let tBef = -1, dt;
-
-      function frame(t) {
-        // Ignore first few frames
-        if (t === undefined) return;
-        if (tBef < 0) {
-          tBef = t;
-          return;
-        }
-
-        // Update dt
-        dt = (t - tBef) / 1000;
-        tBef = t;
-
+      function frame(t, dt) {
         // Process key press
         if (!isKeyPressed('shift')) {
           if (isKeyPressed('arrowleft')) chopper.destRotation += VELO_ROTATION * dt;
@@ -216,7 +204,8 @@
           if (isKeyPressed('arrowup')) chopper.dVh = VELO_HORIZONTAL;
           else if (isKeyPressed('arrowdown')) chopper.dVh = -VELO_HORIZONTAL;
           else chopper.dVh = 0;
-        }
+        } else chopper.dVh = 0;
+
         if (isKeyPressed('a')) chopper.dVv = VELO_VERTICAL;
         else if (isKeyPressed('z')) chopper.dVv = -VELO_VERTICAL;
         else chopper.dVv = 0;
@@ -275,27 +264,78 @@
     let chopper, frameChopper;
     {
       [chopper, frameChopper] = getChopper();
-      chopper.position.set(50, 20, 50)
+      chopper.position.set(0, 20, 0)
       scene.add(chopper);
     }
 
-    camera.position.y = 30;
+    let cCDst = 50; // Camera current distance
+    let cCAlt = Math.PI / 4; // Camera current altitude
+    let cCAzm = 0; // Camera current azimuth
 
+    let cDDst = cCDst; // Camera destination distance
+    let cDAlt = cCAlt; // Camera destination altitude
+    let cDAzm = cCAzm;  // Camera destination azimuth
+
+    let tBef = -1, dt;
     const animate = function (t) {
-      requestAnimationFrame(animate);
-      frameChopper(t);
+      const MAX_ALT = Math.PI / 2 - 0.01;
+      const MIN_ALT = Math.PI / 10;
+      const MIN_DST = 10
 
+      // Request next frame
+      requestAnimationFrame(animate);
+
+      // Initialize variables
+      if (tBef < 0) {
+        tBef = t;
+        return;
+      }
+
+      // Update dt
+      dt = (t - tBef) / 1000;
+      tBef = t;
+
+      // Process chopper
+      frameChopper(t, dt);
+
+      // Move global light
       cube.position.x = Math.sin(t / 1000) + 100
       cube.position.z = Math.cos(t / 1000) + 100
 
-      camera.position.x = Math.sin(t / 5000) * 20 + chopper.position.x
-      camera.position.z = Math.cos(t / 5000) * 20 + chopper.position.z
-      camera.lookAt(chopper.position)
+      const VELO_CAM_ROTATE = 1
+      const VELO_CAM_ZOOM = 15
+
+      // Process key press
+      if (isKeyPressed('shift')) {
+        if (isKeyPressed('arrowleft')) cDAzm += VELO_CAM_ROTATE * dt;
+        if (isKeyPressed('arrowright')) cDAzm -= VELO_CAM_ROTATE * dt;
+        if (isKeyPressed('arrowup')) cDAlt += VELO_CAM_ROTATE * dt;
+        if (isKeyPressed('arrowdown')) cDAlt -= VELO_CAM_ROTATE * dt;
+
+        // Limit altitude range
+        if (cDAlt > MAX_ALT) cDAlt = MAX_ALT;
+        if (cDAlt < MIN_ALT) cDAlt = MIN_ALT;
+      }
+      if (isKeyPressed('+') || isKeyPressed('=')) cDDst -= VELO_CAM_ZOOM * dt;
+      if (isKeyPressed('-') || isKeyPressed('_')) cDDst += VELO_CAM_ZOOM * dt;
+      if (cDDst < MIN_DST) cDDst = MIN_DST
+
+      // Update camera position
+      let gain = 1 / (1 + dt * 4);
+      cCDst = cCDst * gain + cDDst * (1 - gain);
+      cCAlt = cCAlt * gain + cDAlt * (1 - gain);
+      cCAzm = cCAzm * gain + cDAzm * (1 - gain);
+
+      // Apply camera position
+      camera.position.y = cCDst * Math.sin(cCAlt);
+      camera.position.x = cCDst * Math.cos(cCAzm) * Math.cos(cCAlt);
+      camera.position.z = cCDst * Math.sin(cCAzm) * Math.cos(cCAlt);
+      camera.lookAt(0, 0, 0)
 
       renderer.render(scene, camera);
     };
 
-    animate();
+    requestAnimationFrame(animate);
   </script>
 </body>
 

@@ -67,15 +67,23 @@
       for(int l = 0; l < NUM_POINT_LIGHTS; l++) {
         vec3 distV = vPos - pointLights[l].position;
         vec3 lightDirection = normalize(distV);
-        float birghtness = clamp(dot(lightDirection, vNormal), 0.0, 1.0) * lightIntensity  + ambient;
+        float birghtness = clamp(dot(lightDirection, vNormal), 0.0, 1.0) * lightIntensity/dot(distV,distV);
         addedLights.rgb += pointLights[l].color * birghtness;
       }
+      addedLights.rgb += ambient;
       gl_FragColor = color * addedLights;
     }
   </script>
 
   <script type="module">
     import * as THREE from "/three.js/src/Three.js"
+
+    // Global configuration
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.01, 1000);
+    const renderer = new THREE.WebGLRenderer();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    document.body.appendChild(renderer.domElement);
 
     const isKeyPressed = (() => {
       // Check if given key is pressed or not.
@@ -164,6 +172,71 @@
       return { x: r, y: g, z: b, w: 1 }
     }
 
+    const VELO_BULLET = 20;
+    const GRAVITY = -9.8;
+    const MIN_BULLET_HEIGHT = 0;
+    const MAX_BULLET_COUNT = 10
+
+    // Because creating new object takes a lot of computation, pre-create bullet.
+    let bullets = []
+    for (let i = 0; i < MAX_BULLET_COUNT; i++) {
+      let bullet = new THREE.Mesh(
+        new THREE.BoxGeometry(0.1, 0.1, 0.1),
+        new THREE.MeshBasicMaterial({ color: '#ffff80' })
+      )
+      let light = new THREE.PointLight(0xffff80, 1.0);
+      bullet.add(light);
+      bullet.vx = 0;
+      bullet.vz = 0;
+      bullet.vy = 0;
+
+      bullet.setAlive = alive => {
+        bullet.alive = alive;
+        if (alive) {
+          light.intensity = 1;
+        } else {
+          light.intensity = 0;
+        }
+      }
+
+      bullet.setAlive(false);
+      bullets.push(bullet)
+      scene.add(bullet);
+    }
+
+
+    function getBullet(direction, position) {
+      let bullet = null;
+      for (let i = 0; i < MAX_BULLET_COUNT; i++) {
+        if (!bullets[i].alive) {
+          bullet = bullets[i];
+          break;
+        }
+      }
+      if (bullet === null) return null;
+
+      bullet.vx = -Math.cos(direction) * VELO_BULLET;
+      bullet.vz = Math.sin(direction) * VELO_BULLET;
+      bullet.vy = 0;
+      bullet.setAlive(true);
+      bullet.position.set(position.x, position.y, position.z)
+
+      return bullet;
+    }
+
+    function updateBullets() {
+      bullets.forEach(bullet => {
+        if (!bullet.alive) return;
+        bullet.vy += GRAVITY * dt;
+        bullet.position.x += bullet.vx * dt;
+        bullet.position.z += bullet.vz * dt;
+        bullet.position.y += bullet.vy * dt;
+        if (bullet.position.y < MIN_BULLET_HEIGHT) {
+          bullet.setAlive(false);
+        }
+      })
+    }
+
     function getChopper() {
       const VELO_ROTATION = 3;
       const VELO_VERTICAL = 7;
@@ -195,6 +268,14 @@
 
       chopper.vH = 0; // Velocity horizontal
       chopper.vV = 0; // Velocity vertical
+
+      let bulletFrames = []
+      window.addEventListener('keydown', (e) => {
+        if (e.key === ' ') {
+          let bullet = getBullet(chopper.rotation.y, chopper.position);
+          console.log(bullet)
+        }
+      });
 
       function frame(t, dt) {
         // Process key press
@@ -232,13 +313,6 @@
       return [chopper, frame]
     }
 
-    // Global configuration
-    const scene = new THREE.Scene();
-    const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.01, 1000);
-    const renderer = new THREE.WebGLRenderer();
-    renderer.setSize(window.innerWidth, window.innerHeight);
-    document.body.appendChild(renderer.domElement);
-
     // Global light
     let cube;
     {
@@ -251,6 +325,9 @@
 
       let light = new THREE.PointLight(0xffffff, 1.0);
       cube.add(light);
+
+      let ambientLight = new THREE.AmbientLight(0x303030);
+      scene.add(ambientLight);
     }
 
     // Terrain
@@ -297,6 +374,9 @@
 
       // Process chopper
       frameChopper(t, dt);
+
+      // Process bullets
+      updateBullets();
 
       // Move global light
       cube.position.x = Math.sin(t / 1000) + 100

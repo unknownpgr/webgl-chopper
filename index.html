@@ -13,14 +13,14 @@
 <body>
   <script id="vertShader" type="shader">
     varying vec2 vUv;
-    varying vec3 vecPos;
-    varying vec3 vecNormal;
-    uniform sampler2D textureSampler;
+    varying vec3 vPos;
+    varying vec3 vNormal;
 
-    const float eps = 0.02;
+    uniform sampler2D heightMap;
+    uniform float     eps;
 
     float srf(vec2 pos){
-      vec4 color = texture2D(textureSampler,pos);
+      vec4 color = texture2D(heightMap,pos);
       return (color.r+color.g+color.b)*color.a/3.0;
     }
      
@@ -32,16 +32,16 @@
       vec3 texturedPos = vec3(position.x,srf(vUv),position.z);
 
       // Calculate world-space pos for light computation
-      vecPos = (modelViewMatrix * vec4(texturedPos, 1.0)).xyz;
+      vPos = (modelViewMatrix * vec4(texturedPos, 1.0)).xyz;
 
       // Calculate normal
       vec2 dx = vec2(eps,0.0);
       vec2 dz = vec2(0.0,eps);
       vec3 norm = vec3((srf(vUv+dx)-srf(vUv-dx))/(2.0*eps),-1,(srf(vUv+dz)-srf(vUv-dz))/(2.0*eps));
-      vecNormal = (modelViewMatrix * vec4(normalize(norm),0.0)).xyz;
+      vNormal = normalize(modelViewMatrix * vec4(norm,0.0)).xyz;
 
       // Calculated projected position
-      gl_Position = projectionMatrix * vec4(vecPos, 1.0);
+      gl_Position = projectionMatrix * vec4(vPos, 1.0);
     }
   </script>
 
@@ -54,8 +54,8 @@
     };
 
     varying vec2  vUv;
-    varying vec3  vecPos;
-    varying vec3  vecNormal;     
+    varying vec3  vPos;
+    varying vec3  vNormal;     
     
     uniform float       lightIntensity;
     uniform float       ambient;
@@ -65,9 +65,9 @@
     void main(void) {      
       vec4 addedLights = vec4(0.0, 0.0, 0.0, 1.0);
       for(int l = 0; l < NUM_POINT_LIGHTS; l++) {
-        vec3 distV = vecPos - pointLights[l].position;
+        vec3 distV = vPos - pointLights[l].position;
         vec3 lightDirection = normalize(distV);
-        float birghtness = clamp(dot(lightDirection, vecNormal), 0.0, 1.0) * lightIntensity  + ambient;
+        float birghtness = clamp(dot(lightDirection, vNormal), 0.0, 1.0) * lightIntensity  + ambient;
         addedLights.rgb += pointLights[l].color * birghtness;
       }
       gl_FragColor = color * addedLights;
@@ -77,7 +77,23 @@
   <script type="module">
     import * as THREE from "/three.js/src/Three.js"
 
-    function getPlaneGeometry(n) {
+    const isKeyPressed = (() => {
+      // Check if given key is pressed or not.
+      const state = {};
+      window.addEventListener('keyup', (e) => {
+        state[e.key.toLowerCase()] = false // To prevent error by case, force key to be lowercase.
+        state.shift = e.shiftKey // Manually set shift key
+      });
+      window.addEventListener('keydown', (e) => {
+        state[e.key.toLowerCase()] = true
+        state.shift = e.shiftKey
+      });
+      return (key) => state.hasOwnProperty(key) && state[key] || false;
+    })();
+
+    function getTerrainGeometry(n) {
+      // Get n by n grid geometry. width=height=1.
+
       // Geometry is a user-friendly alternative to BufferGeometry.
       const geometry = new THREE.Geometry();
 
@@ -100,80 +116,181 @@
       }
 
       // Do i need to call this function?
-      // geometry.computeBoundingSphere();
+      geometry.computeBoundingSphere();
 
       return geometry
     }
 
+    function getTerrainMaterial() {
+      // Get terrain material from given texture. Therrain height will be (R+G+B)*A/3.
+
+      const texture = new THREE.TextureLoader().load("/texture.jpg");
+      // texture.magFilter = THREE.LinearFilter;  // Default filter
+      // texture.magFilter = THREE.NearestFilter; // Available filter
+      let terrainMat = new THREE.ShaderMaterial({
+        uniforms: THREE.UniformsUtils.merge([
+          THREE.UniformsLib['lights'],
+          {
+            lightIntensity: { value: 1 },
+            heightMap: { value: texture },
+            ambient: { value: 0.2 },
+            color: { value: hex2vec('#783c00') },
+            eps: { value: 0.005 }
+          }
+        ]),
+        vertexShader: document.getElementById('vertShader').text,
+        fragmentShader: document.getElementById('fragShader').text,
+        transparent: true,
+        lights: true
+      });
+      terrainMat.uniforms.heightMap.value = texture;
+      return terrainMat;
+    }
+
+    function getTerrain() {
+      const geometry = getTerrainGeometry(400);
+      const material = getTerrainMaterial();
+      const terrain = new THREE.Mesh(geometry, material);
+      terrain.scale.set(100, 10, 100)
+      return terrain
+    }
+
     function hex2vec(hexStr) {
+      // Convert #RRGGBB format hex string into vec4 (to be used in shader)
       let r = parseInt(hexStr.substr(1, 2), 16) / 255;
       let g = parseInt(hexStr.substr(3, 2), 16) / 255;
       let b = parseInt(hexStr.substr(5, 2), 16) / 255;
       return { x: r, y: g, z: b, w: 1 }
     }
 
+    function getChopper() {
+      const VELO_ROTATION = 3;
+      const VELO_VERTICAL = 7;
+      const VELO_HORIZONTAL = 9;
+
+      const matBody = new THREE.MeshPhongMaterial();
+      const matRoter = new THREE.MeshPhongMaterial({ color: '#a0a0f0' });
+
+      const chopper = new THREE.Object3D();
+      const body = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 0.75), matBody);
+      const tail = new THREE.Mesh(new THREE.BoxGeometry(2, 0.25, 0.25), matBody);
+
+      const roter = new THREE.Object3D();
+      const roterA = new THREE.Mesh(new THREE.BoxGeometry(3, 0.05, 0.2), matRoter);
+      const roterB = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.05, 3), matRoter);
+      roter.add(roterA)
+      roter.add(roterB)
+
+      tail.position.x = 1.5
+      roter.position.y = 0.75
+
+      body.add(tail)
+      body.add(roter)
+      chopper.add(body)
+
+      chopper.destRotation = 0;
+      chopper.dVh = 0; // Dest velocity horizontal
+      chopper.dVv = 0; // Dest velocity vertical
+
+      chopper.vH = 0; // Velocity horizontal
+      chopper.vV = 0; // Velocity vertical
+
+      let tBef = -1, dt;
+
+      function frame(t) {
+        // Ignore first few frames
+        if (t === undefined) return;
+        if (tBef < 0) {
+          tBef = t;
+          return;
+        }
+
+        // Update dt
+        dt = (t - tBef) / 1000;
+        tBef = t;
+
+        // Process key press
+        if (!isKeyPressed('shift')) {
+          if (isKeyPressed('arrowleft')) chopper.destRotation += VELO_ROTATION * dt;
+          if (isKeyPressed('arrowright')) chopper.destRotation -= VELO_ROTATION * dt;
+          if (isKeyPressed('arrowup')) chopper.dVh = VELO_HORIZONTAL;
+          else if (isKeyPressed('arrowdown')) chopper.dVh = -VELO_HORIZONTAL;
+          else chopper.dVh = 0;
+        }
+        if (isKeyPressed('a')) chopper.dVv = VELO_VERTICAL;
+        else if (isKeyPressed('z')) chopper.dVv = -VELO_VERTICAL;
+        else chopper.dVv = 0;
+
+        // Apply chopper rotation
+        let gain = 1 / (1 + dt * 4);
+        chopper.rotation.y = chopper.rotation.y * gain + chopper.destRotation * (1 - gain);
+
+        // Update velocity
+        chopper.vH = chopper.vH * gain + chopper.dVh * (1 - gain);
+        chopper.vV = chopper.vV * gain + chopper.dVv * (1 - gain);
+
+        // Apply velocity
+        chopper.position.x += chopper.vH * -Math.cos(chopper.rotation.y) * dt;
+        chopper.position.z += chopper.vH * Math.sin(chopper.rotation.y) * dt;
+        chopper.position.y += chopper.vV * dt;
+
+        // Update chopper internal motion
+        roter.rotation.y += dt * (chopper.vV / 2 + 10)
+        body.position.y = Math.sin(t / 200) / 10
+        body.rotation.z = chopper.vH / 40;
+      }
+
+      return [chopper, frame]
+    }
+
+    // Global configuration
     const scene = new THREE.Scene();
     const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.01, 1000);
     const renderer = new THREE.WebGLRenderer();
     renderer.setSize(window.innerWidth, window.innerHeight);
     document.body.appendChild(renderer.domElement);
 
-    let cube = new THREE.Mesh(
-      new THREE.BoxGeometry(0.1, 0.1, 0.1),
-      new THREE.MeshBasicMaterial()
-    )
-    scene.add(cube);
-    cube.position.set(0, 4, 1);
-
+    // Global light
+    let cube;
     {
+      cube = new THREE.Mesh(
+        new THREE.BoxGeometry(0.1, 0.1, 0.1),
+        new THREE.MeshBasicMaterial()
+      )
+      scene.add(cube);
+      cube.position.set(10, 50, 10);
+
       let light = new THREE.PointLight(0xffffff, 1.0);
       cube.add(light);
     }
 
-    const texture = new THREE.TextureLoader().load("/texture.jpg");
-    console.log(texture)
-    // texture.magFilter = THREE.LinearFilter;
-    let mat = new THREE.ShaderMaterial({
-      uniforms: THREE.UniformsUtils.merge([
-        THREE.UniformsLib['lights'],
-        {
-          lightIntensity: { type: 'f', value: 1 },
-          textureSampler: { type: 't', value: texture },
-          ambient: { value: 0.1 },
-          color: { value: hex2vec('#783c00') }
-        }
-      ]),
-      vertexShader: document.
-        getElementById('vertShader').text,
-      fragmentShader: document.
-        getElementById('fragShader').text,
-      transparent: true,
-      lights: true
-    });
-    mat.uniforms.textureSampler.value = texture;
+    // Terrain
+    let terrain;
+    {
+      terrain = getTerrain()
+      scene.add(terrain);
+    }
 
-    const geometry = getPlaneGeometry(200);
-    // const material = new THREE.MeshBasicMaterial({ color: 0x00ff00 });
-    const plane = new THREE.Mesh(geometry, mat);
-    plane.scale.set(2, 1, 2)
-    scene.add(plane);
+    // Chopper
+    let chopper, frameChopper;
+    {
+      [chopper, frameChopper] = getChopper();
+      chopper.position.set(50, 20, 50)
+      scene.add(chopper);
+    }
 
-    camera.position.y = 2;
+    camera.position.y = 30;
 
     const animate = function (t) {
       requestAnimationFrame(animate);
+      frameChopper(t);
 
-      cube.position.x = Math.sin(t / 1000) + 1
-      cube.position.z = Math.cos(t / 1000) + 1
+      cube.position.x = Math.sin(t / 1000) + 100
+      cube.position.z = Math.cos(t / 1000) + 100
 
-      camera.position.x = Math.sin(t / 10000) + 1
-      camera.position.z = Math.cos(t / 10000) + 1
-      camera.lookAt(1, 0, 1)
-
-
-      // plane.rotation.x += 0.05;
-      // plane.rotation.y += 0.01;
-      // plane.rotation.z += 0.01;
+      camera.position.x = Math.sin(t / 5000) * 20 + chopper.position.x
+      camera.position.z = Math.cos(t / 5000) * 20 + chopper.position.z
+      camera.lookAt(chopper.position)
 
       renderer.render(scene, camera);
     };

@@ -253,6 +253,7 @@
         bullet.position.y += bullet.vy * dt;
         if (bullet.position.y < MIN_BULLET_HEIGHT) {
           bullet.setAlive(false);
+          bullet.position.set(0, -99999, 0) // Move to outside of clip space so that it is not rendered.
         }
       })
     }

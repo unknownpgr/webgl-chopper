@@ -96,16 +96,31 @@
     renderer.setSize(window.innerWidth, window.innerHeight);
     document.body.appendChild(renderer.domElement);
 
+    function unshiftKey(key) {
+      /*
+      If shift key is allowed, same key will be detected differently.
+      Therefore there will be some errors.
+      e.g. If i do press shift > press + > release shift > release +,
+      + key will not be released.
+      Therefore key converting is required.
+      */
+      if (key == '_') return '-';
+      if (key == '+') return '=';
+      return key.toLowerCase()
+    }
+
     const isKeyPressed = (() => {
       // Check if given key is pressed or not.
       const state = {};
       window.addEventListener('keyup', (e) => {
-        state[e.key.toLowerCase()] = false // To prevent error by case, force key to be lowercase.
-        state.shift = e.shiftKey // Manually set shift key
+        let key = unshiftKey(e.key); // To prevent error by case, force key to be lowercase.
+        state[key] = false;
+        state.shift = e.shiftKey; // To prevent error by case, force key to be lowercase.
       });
       window.addEventListener('keydown', (e) => {
-        state[e.key.toLowerCase()] = true
-        state.shift = e.shiftKey
+        let key = unshiftKey(e.key);
+        state[key] = true;
+        state.shift = e.shiftKey;
       });
       return (key) => state.hasOwnProperty(key) && state[key] || false;
     })();
@@ -391,8 +406,8 @@
         if (cDAlt > MAX_ALT) cDAlt = MAX_ALT;
         if (cDAlt < MIN_ALT) cDAlt = MIN_ALT;
       }
-      if (isKeyPressed('+') || isKeyPressed('=')) cDDst -= VELO_CAM_ZOOM * dt;
-      if (isKeyPressed('-') || isKeyPressed('_')) cDDst += VELO_CAM_ZOOM * dt;
+      if (isKeyPressed('=')) cDDst -= VELO_CAM_ZOOM * dt;
+      if (isKeyPressed('-')) cDDst += VELO_CAM_ZOOM * dt;
       if (cDDst < MIN_DST) cDDst = MIN_DST
 
       // Update camera position

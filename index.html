@@ -37,7 +37,7 @@
       // Calculate normal
       vec2 dx = vec2(eps,0.0);
       vec2 dz = vec2(0.0,eps);
-      vec3 norm = vec3((srf(vUv+dx)-srf(vUv-dx))/(2.0*eps),-1,(srf(vUv+dz)-srf(vUv-dz))/(2.0*eps));
+      vec3 norm = -vec3((srf(vUv+dx)-srf(vUv-dx))/(2.0*eps),-1,(srf(vUv+dz)-srf(vUv-dz))/(2.0*eps));
       vNormal = normalize(modelViewMatrix * vec4(norm,0.0)).xyz;
 
       // Calculated projected position
@@ -51,6 +51,7 @@
     struct PointLight {
       vec3  color;
       vec3  position;
+      float distance;
     };
 
     varying vec2  vUv;
@@ -67,8 +68,13 @@
       for(int l = 0; l < NUM_POINT_LIGHTS; l++) {
         vec3 distV = vPos - pointLights[l].position;
         vec3 lightDirection = normalize(distV);
-        float birghtness = clamp(dot(lightDirection, vNormal), 0.0, 1.0) * lightIntensity/dot(distV,distV);
-        addedLights.rgb += pointLights[l].color * birghtness;
+        float brightness = 0.0;
+        if(pointLights[l].distance>0.0){
+          brightness = clamp(dot(lightDirection, vNormal), 0.0, 1.0) * lightIntensity / (dot(distV,distV)/50.0);
+        }else{
+          brightness = clamp(dot(lightDirection, vNormal), 0.0, 1.0) * lightIntensity;
+        }
+        addedLights.rgb += pointLights[l].color * brightness;
       }
       addedLights.rgb += ambient;
       gl_FragColor = color * addedLights;
@@ -184,7 +190,7 @@
         new THREE.BoxGeometry(0.1, 0.1, 0.1),
         new THREE.MeshBasicMaterial({ color: '#ffff80' })
       )
-      let light = new THREE.PointLight(0xffff80, 1.0);
+      let light = new THREE.PointLight(0xffff80, 1.0, 1);
       bullet.add(light);
       bullet.vx = 0;
       bullet.vz = 0;
@@ -273,7 +279,6 @@
       window.addEventListener('keydown', (e) => {
         if (e.key === ' ') {
           let bullet = getBullet(chopper.rotation.y, chopper.position);
-          console.log(bullet)
         }
       });
 

@@ -12,10 +12,8 @@
 
 <body>
   <script id="vertShader" type="shader">
-    varying vec2 vUv;
-    varying vec3 vPos;
-    varying vec3 vNormal;
 
+    // Custom attributes
     uniform sampler2D heightMap;
     uniform float     eps;
 
@@ -23,61 +21,68 @@
       vec4 color = texture2D(heightMap,pos);
       return (color.r+color.g+color.b)*color.a/3.0;
     }
-     
+
+    #define PHONG
+
+    varying vec3 vViewPosition;
+    #ifndef FLAT_SHADED
+      varying vec3 vNormal;
+    #endif
+    #include <common>
+    #include <uv_pars_vertex>
+    #include <uv2_pars_vertex>
+    #include <displacementmap_pars_vertex>
+    #include <envmap_pars_vertex>
+    #include <color_pars_vertex>
+    #include <fog_pars_vertex>
+    #include <morphtarget_pars_vertex>
+    #include <skinning_pars_vertex>
+    #include <shadowmap_pars_vertex>
+    #include <logdepthbuf_pars_vertex>
+    #include <clipping_planes_pars_vertex>
     void main() {
-      // Get model position
-      vUv = position.xz;
+      #include <uv_vertex>
+      #include <uv2_vertex>
+      #include <color_vertex>
+      #include <beginnormal_vertex>
+      #include <morphnormal_vertex>
+      #include <skinbase_vertex>
+      #include <skinnormal_vertex>
+      #include <defaultnormal_vertex>
+    #ifndef FLAT_SHADED // Normal computed with derivatives when FLAT_SHADED
+
+    // Get model position
+    vec2 vUv = position.xz;
+
+    // Calculate normal
+    vec2 dx = vec2(eps,0.0);
+    vec2 dz = vec2(0.0,eps);
+
+    vec3 norm = -normalize(vec3((srf(vUv+dx)-srf(vUv-dx))/(2.0*eps),-1,(srf(vUv+dz)-srf(vUv-dz))/(2.0*eps)));
+    vNormal = normalize(modelViewMatrix * vec4(norm,0.0)).xyz;
+
+    #endif
+      #include <begin_vertex>
+      #include <morphtarget_vertex>
+      #include <skinning_vertex>
+      #include <displacementmap_vertex>
+      #include <project_vertex>
+      #include <logdepthbuf_vertex>
+      #include <clipping_planes_vertex>
+      vViewPosition = - mvPosition.xyz;
+      #include <worldpos_vertex>
+      #include <envmap_vertex>
+      #include <shadowmap_vertex>
+      #include <fog_vertex>
 
       // Calculate pos from texture
       vec3 texturedPos = vec3(position.x,srf(vUv),position.z);
 
       // Calculate world-space pos for light computation
-      vPos = (modelViewMatrix * vec4(texturedPos, 1.0)).xyz;
-
-      // Calculate normal
-      vec2 dx = vec2(eps,0.0);
-      vec2 dz = vec2(0.0,eps);
-      vec3 norm = -vec3((srf(vUv+dx)-srf(vUv-dx))/(2.0*eps),-1,(srf(vUv+dz)-srf(vUv-dz))/(2.0*eps));
-      vNormal = normalize(modelViewMatrix * vec4(norm,0.0)).xyz;
+      vec3 vPos = (modelViewMatrix * vec4(texturedPos, 1.0)).xyz;
 
       // Calculated projected position
       gl_Position = projectionMatrix * vec4(vPos, 1.0);
-    }
-  </script>
-
-  <script id="fragShader" type="shader">
-    precision highp float;
-
-    struct PointLight {
-      vec3  color;
-      vec3  position;
-      float distance;
-    };
-
-    varying vec2  vUv;
-    varying vec3  vPos;
-    varying vec3  vNormal;     
-    
-    uniform float       lightIntensity;
-    uniform float       ambient;
-    uniform vec4        color;
-    uniform PointLight  pointLights[NUM_POINT_LIGHTS];
-     
-    void main(void) {      
-      vec4 addedLights = vec4(0.0, 0.0, 0.0, 1.0);
-      for(int l = 0; l < NUM_POINT_LIGHTS; l++) {
-        vec3 distV = vPos - pointLights[l].position;
-        vec3 lightDirection = normalize(distV);
-        float brightness = 0.0;
-        if(pointLights[l].distance>0.0){
-          brightness = clamp(dot(lightDirection, vNormal), 0.0, 1.0) * lightIntensity / (dot(distV,distV)/50.0);
-        }else{
-          brightness = clamp(dot(lightDirection, vNormal), 0.0, 1.0) * lightIntensity;
-        }
-        addedLights.rgb += pointLights[l].color * brightness;
-      }
-      addedLights.rgb += ambient;
-      gl_FragColor = color * addedLights;
     }
   </script>
 
@@ -89,18 +94,34 @@
     const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.01, 1000);
     const renderer = new THREE.WebGLRenderer();
     renderer.setSize(window.innerWidth, window.innerHeight);
+    scene.background = new THREE.Color(0xbfe3dd)
     document.body.appendChild(renderer.domElement);
+
+    function unshiftKey(key) {
+      /*
+      If shift key is allowed, same key will be detected differently.
+      Therefore there will be some errors.
+      e.g. If i do press shift > press + > release shift > release +,
+      + key will not be released.
+      Therefore key converting is required.
+      */
+      if (key == '_') return '-';
+      if (key == '+') return '=';
+      return key.toLowerCase()
+    }
 
     const isKeyPressed = (() => {
       // Check if given key is pressed or not.
       const state = {};
       window.addEventListener('keyup', (e) => {
-        state[e.key.toLowerCase()] = false // To prevent error by case, force key to be lowercase.
-        state.shift = e.shiftKey // Manually set shift key
+        let key = unshiftKey(e.key); // To prevent error by case, force key to be lowercase.
+        state[key] = false;
+        state.shift = e.shiftKey; // To prevent error by case, force key to be lowercase.
       });
       window.addEventListener('keydown', (e) => {
-        state[e.key.toLowerCase()] = true
-        state.shift = e.shiftKey
+        let key = unshiftKey(e.key);
+        state[key] = true;
+        state.shift = e.shiftKey;
       });
       return (key) => state.hasOwnProperty(key) && state[key] || false;
     })();
@@ -141,24 +162,27 @@
       const texture = new THREE.TextureLoader().load("/texture.jpg");
       // texture.magFilter = THREE.LinearFilter;  // Default filter
       // texture.magFilter = THREE.NearestFilter; // Available filter
-      let terrainMat = new THREE.ShaderMaterial({
-        uniforms: THREE.UniformsUtils.merge([
-          THREE.UniformsLib['lights'],
-          {
-            lightIntensity: { value: 1 },
-            heightMap: { value: texture },
-            ambient: { value: 0.2 },
-            color: { value: hex2vec('#783c00') },
-            eps: { value: 0.005 }
-          }
-        ]),
+
+
+      var customUniforms = THREE.UniformsUtils.merge([
+        THREE.ShaderLib.phong.uniforms,
+        {
+          diffuse: { value: new THREE.Color('#d47b4a') },
+          heightMap: { value: texture },
+          eps: { value: 0.0071 },
+        }
+      ]);
+
+      var customMaterial = new THREE.ShaderMaterial({
+        uniforms: customUniforms,
         vertexShader: document.getElementById('vertShader').text,
-        fragmentShader: document.getElementById('fragShader').text,
+        fragmentShader: THREE.ShaderLib.phong.fragmentShader,
+        lights: true,
         transparent: true,
-        lights: true
+        name: 'custom-material'
       });
-      terrainMat.uniforms.heightMap.value = texture;
-      return terrainMat;
+      customMaterial.uniforms.heightMap.value = texture;
+      return customMaterial;
     }
 
     function getTerrain() {
@@ -168,14 +192,6 @@
       terrain.scale.set(100, 10, 100)
       terrain.position.set(-50, 0, -50)
       return terrain
-    }
-
-    function hex2vec(hexStr) {
-      // Convert #RRGGBB format hex string into vec4 (to be used in shader)
-      let r = parseInt(hexStr.substr(1, 2), 16) / 255;
-      let g = parseInt(hexStr.substr(3, 2), 16) / 255;
-      let b = parseInt(hexStr.substr(5, 2), 16) / 255;
-      return { x: r, y: g, z: b, w: 1 }
     }
 
     const VELO_BULLET = 20;
@@ -190,7 +206,7 @@
         new THREE.BoxGeometry(0.1, 0.1, 0.1),
         new THREE.MeshBasicMaterial({ color: '#ffff80' })
       )
-      let light = new THREE.PointLight(0xffff80, 1.0, 1);
+      let light = new THREE.PointLight(0xffff00, 1, 10);
       bullet.add(light);
       bullet.vx = 0;
       bullet.vz = 0;
@@ -202,6 +218,7 @@
           light.intensity = 1;
         } else {
           light.intensity = 0;
+          bullet.position.set(0, -99999, 0) // Move to outside of clip space so that it is not rendered.
         }
       }
 
@@ -209,7 +226,6 @@
       bullets.push(bullet)
       scene.add(bullet);
     }
-
 
     function getBullet(direction, position) {
       let bullet = null;
@@ -321,18 +337,12 @@
     // Global light
     let cube;
     {
-      cube = new THREE.Mesh(
-        new THREE.BoxGeometry(0.1, 0.1, 0.1),
-        new THREE.MeshBasicMaterial()
-      )
-      scene.add(cube);
-      cube.position.set(10, 50, 10);
-
-      let light = new THREE.PointLight(0xffffff, 1.0);
-      cube.add(light);
-
       let ambientLight = new THREE.AmbientLight(0x303030);
       scene.add(ambientLight);
+
+      let directionalLight = new THREE.DirectionalLight(0xffffff, 1)
+      scene.add(directionalLight)
+      directionalLight.position.set(0, 50, 50);
     }
 
     // Terrain
@@ -383,10 +393,6 @@
       // Process bullets
       updateBullets();
 
-      // Move global light
-      cube.position.x = Math.sin(t / 1000) + 100
-      cube.position.z = Math.cos(t / 1000) + 100
-
       const VELO_CAM_ROTATE = 1
       const VELO_CAM_ZOOM = 15
 
@@ -401,8 +407,8 @@
         if (cDAlt > MAX_ALT) cDAlt = MAX_ALT;
         if (cDAlt < MIN_ALT) cDAlt = MIN_ALT;
       }
-      if (isKeyPressed('+') || isKeyPressed('=')) cDDst -= VELO_CAM_ZOOM * dt;
-      if (isKeyPressed('-') || isKeyPressed('_')) cDDst += VELO_CAM_ZOOM * dt;
+      if (isKeyPressed('=')) cDDst -= VELO_CAM_ZOOM * dt;
+      if (isKeyPressed('-')) cDDst += VELO_CAM_ZOOM * dt;
       if (cDDst < MIN_DST) cDDst = MIN_DST
 
       // Update camera position

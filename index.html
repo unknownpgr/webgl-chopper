@@ -58,7 +58,7 @@
     vec2 dx = vec2(eps,0.0);
     vec2 dz = vec2(0.0,eps);
 
-    vec3 norm = -vec3((srf(vUv+dx)-srf(vUv-dx))/(2.0*eps),-1,(srf(vUv+dz)-srf(vUv-dz))/(2.0*eps));
+    vec3 norm = -normalize(vec3((srf(vUv+dx)-srf(vUv-dx))/(2.0*eps),-1,(srf(vUv+dz)-srf(vUv-dz))/(2.0*eps)));
     vNormal = normalize(modelViewMatrix * vec4(norm,0.0)).xyz;
 
     #endif
@@ -168,7 +168,7 @@
         {
           diffuse: { value: new THREE.Color('#d47b4a') },
           heightMap: { value: texture },
-          eps: { value: 0.01 },
+          eps: { value: 0.0071 },
         }
       ]);
 
@@ -217,6 +217,7 @@
           light.intensity = 1;
         } else {
           light.intensity = 0;
+          bullet.position.set(0, -99999, 0) // Move to outside of clip space so that it is not rendered.
         }
       }
 
@@ -253,7 +254,6 @@
         bullet.position.y += bullet.vy * dt;
         if (bullet.position.y < MIN_BULLET_HEIGHT) {
           bullet.setAlive(false);
-          bullet.position.set(0, -99999, 0) // Move to outside of clip space so that it is not rendered.
         }
       })
     }

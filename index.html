@@ -94,6 +94,7 @@
     const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.01, 1000);
     const renderer = new THREE.WebGLRenderer();
     renderer.setSize(window.innerWidth, window.innerHeight);
+    scene.background = new THREE.Color(0xbfe3dd)
     document.body.appendChild(renderer.domElement);
 
     function unshiftKey(key) {
@@ -205,7 +206,7 @@
         new THREE.BoxGeometry(0.1, 0.1, 0.1),
         new THREE.MeshBasicMaterial({ color: '#ffff80' })
       )
-      let light = new THREE.PointLight(0xffff00, 0.5, 10);
+      let light = new THREE.PointLight(0xffff00, 1, 10);
       bullet.add(light);
       bullet.vx = 0;
       bullet.vz = 0;
@@ -294,7 +295,6 @@
       window.addEventListener('keydown', (e) => {
         if (e.key === ' ') {
           let bullet = getBullet(chopper.rotation.y, chopper.position);
-          console.log(bullet)
         }
       });
 

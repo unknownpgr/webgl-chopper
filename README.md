@@ -1,6 +1,8 @@
-컴퓨터 그래픽스 프로젝트
+# 컴퓨터 그래픽스 프로젝트
 
-1. Requirements 구현
+-   Visit live demo page! : https://unknownpgr.github.io/webgl-chopper/
+
+## Requirements 구현
 
 Requirements에 제시된 모든 내용을 구현함
 
@@ -18,7 +20,7 @@ Requirements에 제시된 모든 내용을 구현함
 
 단 쉐이더를 구현할 때 좀 더 다양한 효과를 사용하고자 THREE.js의 PhongMaterialShader를 수정하여 이용함. Vertex shader에서는 texture를 사용하여 position 및 normal값을 수정하도록 구현하였으며, fragment shader는 손대지 않고 그대로 사용함.
 
-2. 추가로 더 구현한 것
+## 추가로 더 구현한 것
 
 -   키보드 키를 누르는 순간뿐만 아니라, 진짜 게임처럼 키보드 키를 누르는 동안 계속 chopper 및 view움직임이 발생
 
